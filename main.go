@@ -11,8 +11,7 @@ import (
 )
 
 type mCollector struct {
-	rds_metric       *prometheus.Desc
-	rds_total_metric *prometheus.Desc
+	rds_metric *prometheus.Desc
 }
 
 func newCollector() *mCollector {
@@ -28,7 +27,7 @@ func newCollector() *mCollector {
 func (collector *mCollector) Describe(ch chan<- *prometheus.Desc) {
 
 	ch <- collector.rds_metric
-	//ch <- collector.rds_total_metric
+
 }
 
 func (collector *mCollector) Collect(ch chan<- prometheus.Metric) {
@@ -44,11 +43,6 @@ func (collector *mCollector) Collect(ch chan<- prometheus.Metric) {
 		labels = append(n, v.ClientAddress, v.ConnectedResource, v.UserName)
 		ch <- prometheus.MustNewConstMetric(collector.rds_metric, prometheus.GaugeValue, metricValue, labels...)
 	}
-
-	// m1 := prometheus.MustNewConstMetric(collector.rds_metric, prometheus.GaugeValue, metricValue, labels...)
-	// m2 := prometheus.MustNewConstMetric(collector.rds_total_metric, prometheus.GaugeValue, float64(len(res)))
-
-	//ch <- prometheus.MustNewConstMetric(collector.rds_total_metric, prometheus.GaugeValue, float64(len(res)))
 
 }
 
