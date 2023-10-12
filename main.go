@@ -3,75 +3,94 @@ package main
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 
+	"github.com/StackExchange/wmi"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Define a struct for you collector that contains pointers
-// to prometheus descriptors for each metric you wish to expose.
-// Note you can also include fields of other types if they provide utility
-// but we just won't be exposing them as metrics.
 type mCollector struct {
-	fooMetric *prometheus.Desc
-	barMetric *prometheus.Desc
+	rds_metric       *prometheus.Desc
+	rds_total_metric *prometheus.Desc
 }
 
-// You must create a constructor for you collector that
-// initializes every descriptor and returns a pointer to the collector
 func newCollector() *mCollector {
-	// labels := map[string]string{
-	// 	"foo": "bar",
-	// 	"bar": "foo",
-	// }
+
 	return &mCollector{
-		fooMetric: prometheus.NewDesc("foo_metric",
-			"Shows whether a foo has occurred in our cluster",
-			[]string{"hostname", "ip_addr"}, nil,
+		rds_metric: prometheus.NewDesc("rds_metric",
+			"info about rds connections",
+			[]string{"ClientAddress", "ConnectedResource", "UserName"}, nil,
 		),
-		barMetric: prometheus.NewDesc("bar_metric",
-			"Shows whether a bar has occurred in our cluster",
+		rds_total_metric: prometheus.NewDesc("rds_total_metric",
+			"total rds connections",
 			nil, nil,
 		),
 	}
 }
 
-// Each and every collector must implement the Describe function.
-// It essentially writes all descriptors to the prometheus desc channel.
 func (collector *mCollector) Describe(ch chan<- *prometheus.Desc) {
 
-	//Update this section with the each metric you create for a given collector
-	ch <- collector.fooMetric
-	ch <- collector.barMetric
+	ch <- collector.rds_metric
+	ch <- collector.rds_total_metric
 }
 
-// Collect implements required collect function for all promehteus collectors
 func (collector *mCollector) Collect(ch chan<- prometheus.Metric) {
 
-	//Implement logic here to determine proper metric value to return to prometheus
-	//for each descriptor or call other functions that do so.
-	var metricValue float64
-	if 1 == 1 {
-		metricValue += rand.Float64()
-	}
-	s := fmt.Sprintf("user %v", rand.Intn(100))
-	//Write latest value for each metric in the prometheus metric channel.
-	//Note that you can pass CounterValue, GaugeValue, or UntypedValue types here.
+	var metricValue = 1.0
+	var labels []string
 
-	m1 := prometheus.MustNewConstMetric(collector.fooMetric, prometheus.GaugeValue, metricValue, s, "127.0.0.1")
-	m2 := prometheus.MustNewConstMetric(collector.barMetric, prometheus.GaugeValue, metricValue)
+	res := []rdsUserStats{}
+	wmi.QueryNamespace("SELECT ClientAddress, ConnectedResource, UserName FROM Win32_TSGatewayConnection", &res, "root\\cimv2\\TerminalServices")
+	labels = append(labels, res[0].ClientAddress)
+	labels = append(labels, res[0].ConnectedResource)
+	labels = append(labels, res[0].UserName)
 
-	ch <- m1
-	ch <- m2
+	// m1 := prometheus.MustNewConstMetric(collector.rds_metric, prometheus.GaugeValue, metricValue, labels...)
+	// m2 := prometheus.MustNewConstMetric(collector.rds_total_metric, prometheus.GaugeValue, float64(len(res)))
+
+	ch <- prometheus.MustNewConstMetric(collector.rds_metric, prometheus.GaugeValue, metricValue, labels...)
+	ch <- prometheus.MustNewConstMetric(collector.rds_total_metric, prometheus.GaugeValue, float64(len(res)))
+	var l2 []string
+	l2 = append(labels, res[1].ClientAddress)
+	l2 = append(labels, res[1].ConnectedResource)
+	l2 = append(labels, res[1].UserName)
+	ch <- prometheus.MustNewConstMetric(collector.rds_metric, prometheus.GaugeValue, metricValue, l2...)
+
+	//ch <- prometheus.MustNewConstMetric(collector.rds_metric, prometheus.GaugeValue, metricValue, labels...)
+	ch <- prometheus.MustNewConstMetric(collector.rds_total_metric, prometheus.GaugeValue, float64(len(res)))
 }
 
+type rdsUserStats struct {
+	ClientAddress     string
+	ConnectedResource string
+	UserName          string
+}
+
+type RdsStats struct {
+	Users            []rdsUserStats
+	totalConnections int
+}
+
+func getRdsStatistics() RdsStats {
+	var res []rdsUserStats
+
+	wmi.QueryNamespace("SELECT ClientAddress, ConnectedResource, UserName FROM Win32_TSGatewayConnection", &res, "root\\cimv2\\TerminalServices")
+
+	return RdsStats{
+		Users:            res,
+		totalConnections: len(res),
+	}
+}
 func main() {
-	foo := newCollector()
-	prometheus.MustRegister(foo)
+	c := newCollector()
+	prometheus.MustRegister(c)
 
 	http.Handle("/metrics", promhttp.Handler())
 	fmt.Println("Listening on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	r := getRdsStatistics()
+	fmt.Println(r)
+
 }
